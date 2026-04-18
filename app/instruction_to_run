@@ -1,0 +1,5 @@
+How to run the app?
+1. open cmd in VS
+2. cd "C:\Users\natal\Desktop\OneDrive - SGH\Magisterka\Praca Magisterska" (where the project is located)
+3. venv\Scripts\activate.bat
+4. streamlit run app\estimate_app.py
