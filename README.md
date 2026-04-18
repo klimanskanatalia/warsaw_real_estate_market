@@ -91,35 +91,5 @@ Make sure `models/price_model.pkl` and `models/feature_columns.pkl` exist (gener
 
 ---
 
-## Using the Python API
 
-```python
-from warsaw_real_estate.data.loader import load_final_dataset
-from warsaw_real_estate.models.predict import predict_price
 
-df = load_final_dataset()
-
-price_per_m2 = predict_price({
-    "building_age": 20,
-    "district": 3,            # e.g. Mokotów = 3
-    "dist_to_centrum_km": 3.5,
-    "dist_to_metro_km": 0.8,
-    "rooms": 3,
-    "river_side": 1,
-})
-print(f"Estimated price/m²: {price_per_m2:,.0f} PLN")
-```
-
----
-
-## Tests
-
-```bash
-pytest tests/
-```
-
----
-
-## License
-
-[MIT](LICENSE)
