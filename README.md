@@ -26,7 +26,7 @@ The model predicts **price per m² (PLN/m²)** using a Random Forest Regressor (
 
 | Feature | Type | Description |
 |---------|------|-------------|
-| `district` | categorical | Warsaw district (label-encoded) |
+| `district` | numerical | Warsaw district (integer code, 0–17) |
 | `building_age` | numerical | Age of the building in years |
 | `dist_to_centrum_km` | numerical | Distance to city centre in km |
 | `dist_to_metro_km` | numerical | Distance to nearest metro station in km |
@@ -44,18 +44,19 @@ The model predicts **price per m² (PLN/m²)** using a Random Forest Regressor (
 ├── data/
 │   └── warszawa-dzielnice.geojson  # Warsaw district boundaries (GeoJSON)
 ├── models/                       # Serialised model artefacts (gitignored)
-│   ├── price_model.pkl           # Trained Random Forest model
-│   └── feature_columns.pkl       # Feature column order for inference
 ├── notebooks/                    # Numbered, reproducible Jupyter notebooks
-├── reports/
-│   └── Analysis_Summary_Report.txt
 ├── src/
 │   └── warsaw_real_estate/       # Installable Python package
+│       ├── app/
+│       │   └── __init__.py
 │       ├── data/
 │       │   └── loader.py         # Dataset loading helpers
 │       └── models/
 │           └── predict.py        # Inference helpers
 ├── tests/                        # pytest test suite
+│   ├── conftest.py
+│   ├── test_data_loader.py
+│   └── test_predict.py
 └── requirements.txt
 ```
 

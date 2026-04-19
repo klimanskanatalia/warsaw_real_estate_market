@@ -12,7 +12,7 @@ st.set_page_config(
     layout="centered",
 )
 
-# -- Model loading -------------------------------------------------------------
+# -- Model + artifact loading --------------------------------------------------
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 
 
@@ -27,30 +27,22 @@ def get_feature_columns():
         return pickle.load(fh)
 
 
-# -- District encoding ---------------------------------------------------------
-# LabelEncoder used during data preparation encodes alphabetically (0-indexed).
-DISTRICT_MAP = {
-    "Bemowo": 0,
-    "Bia\u0142o\u0142\u0119ka": 1,
-    "Bielany": 2,
-    "Mokot\u00f3w": 3,
-    "Ochota": 4,
-    "Praga Po\u0142udnie": 5,
-    "Praga P\u00f3\u0142noc": 6,
-    "Rembertow": 7,
-    "Targ\u00f3wek": 8,
-    "Ursus": 9,
-    "Ursynow": 10,
-    "Wawer": 11,
-    "Weso\u0142a": 12,
-    "Wilanow": 13,
-    "Wola": 14,
-    "W\u0142ochy": 15,
-    "\u015ar\u00f3dmie\u015bcie": 16,
-    "\u017boliborz": 17,
-}
+@st.cache_resource
+def get_district_tier_map():
+    """dict: district_name -> tier (int 0-6, data-driven from training set)."""
+    with open(MODELS_DIR / "district_tier_map.pkl", "rb") as fh:
+        return pickle.load(fh)
 
-# river_side: 0 = east bank (right side), 1 = west bank (left side)
+
+# -- Derive available material groups from saved feature columns ---------------
+@st.cache_resource
+def get_material_groups():
+    feature_cols = get_feature_columns()
+    return sorted([c.replace("material_group_", "") for c in feature_cols if c.startswith("material_group_")])
+
+
+# -- River-side lookup (1 = east/right bank, 0 = west/left bank) ---------------
+# Matches the encoding in 03_modify.ipynb
 EAST_BANK = {
     "Bia\u0142o\u0142\u0119ka",
     "Praga Po\u0142udnie",
@@ -62,8 +54,8 @@ EAST_BANK = {
 }
 
 
-def river_side_for(district_name):
-    return 0 if district_name in EAST_BANK else 1
+def river_side_for(district_name: str) -> int:
+    return 1 if district_name in EAST_BANK else 0
 
 
 # -- UI ------------------------------------------------------------------------
@@ -74,37 +66,40 @@ st.caption(
 )
 st.divider()
 
+district_tier_map = get_district_tier_map()
+material_groups   = get_material_groups()
+
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Property details")
     rooms = st.number_input("Number of rooms", min_value=1, max_value=10, value=3, step=1)
+    surface = st.number_input("Surface area (m\u00b2)", min_value=10.0, max_value=500.0, value=60.0, step=1.0)
+    floor = st.number_input("Floor number", min_value=-1, max_value=30, value=2, step=1)
     construction_year = st.number_input(
         "Year of construction", min_value=1900, max_value=2030, value=2000, step=1
     )
-    current_year = pd.Timestamp.now().year
-    building_age = current_year - construction_year
+    market = st.selectbox("Market type", options=[(0, "Primary"), (1, "Secondary")], format_func=lambda x: x[1])[0]
+    material_group = st.selectbox("Building material", options=material_groups)
 
 with col2:
     st.subheader("Location")
-    district_name = st.selectbox("District", options=sorted(DISTRICT_MAP.keys()))
-    dist_to_metro_km = st.number_input(
-        "Distance to metro (km)", min_value=0.0, max_value=50.0, value=1.0, step=0.1, format="%.2f"
+    district_name = st.selectbox("District", options=sorted(district_tier_map.keys()))
+    dist_to_metro = st.number_input(
+        "Distance to nearest metro station (km)", min_value=0.0, max_value=30.0, value=1.0, step=0.1, format="%.2f"
     )
-    dist_to_centrum_km = st.number_input(
+    dist_to_center = st.number_input(
         "Distance to city centre (km)", min_value=0.0, max_value=50.0, value=5.0, step=0.1, format="%.2f"
     )
 
 st.divider()
 
 # -- Derived features ----------------------------------------------------------
-district_code = DISTRICT_MAP[district_name]
-river_side_code = river_side_for(district_name)
-bank_label = (
-    "East bank (right side of Vistula)"
-    if river_side_code == 0
-    else "West bank (left side of Vistula)"
-)
+current_year = pd.Timestamp.now().year
+building_age     = current_year - construction_year
+district_tier    = int(district_tier_map[district_name])
+river_side_code  = river_side_for(district_name)
+bank_label = "East bank (right side of Vistula)" if river_side_code == 1 else "West bank (left side of Vistula)"
 
 with st.expander("Derived values used by the model", expanded=False):
     st.markdown(
@@ -112,7 +107,7 @@ with st.expander("Derived values used by the model", expanded=False):
         | Feature | Value |
         |---|---|
         | Building age | **{building_age}** years |
-        | District code | **{district_code}** |
+        | District price tier | **{district_tier}** / 6 (0 = cheapest area, 6 = most expensive) |
         | River side | **{river_side_code}** ({bank_label}) |
         """
     )
@@ -122,19 +117,32 @@ if st.button("Estimate price per m\u00b2", type="primary", use_container_width=T
     model = get_model()
     feature_columns = get_feature_columns()
 
-    input_dict = {
-        "building_age": building_age,
-        "district": district_code,
-        "dist_to_centrum_km": dist_to_centrum_km,
-        "river_side": river_side_code,
-        "rooms": rooms,
-        "dist_to_metro_km": dist_to_metro_km,
-    }
+    # Build input row: start with zeros for all features
+    input_dict = {col: 0 for col in feature_columns}
 
-    input_df = pd.DataFrame([input_dict]).reindex(columns=feature_columns)
+    # Set OHE material group dummy
+    mat_col = f"material_group_{material_group}"
+    if mat_col in input_dict:
+        input_dict[mat_col] = 1
+
+    # Set numeric features
+    input_dict["building_age"]   = building_age
+    input_dict["dist_to_center"] = dist_to_center
+    input_dict["dist_to_metro"]  = dist_to_metro
+    input_dict["floor"]          = floor
+    input_dict["market"]         = market
+    input_dict["river_side"]     = river_side_code
+    input_dict["rooms"]          = rooms
+    input_dict["surface"]        = surface
+    input_dict["district_tier"]  = district_tier
+
+    input_df = pd.DataFrame([input_dict])[feature_columns]
 
     try:
         price_per_m2 = model.predict(input_df)[0]
         st.success(f"### Estimated price: **{price_per_m2:,.0f} PLN / m\u00b2**")
+        if surface > 0:
+            total = price_per_m2 * surface
+            st.info(f"Total estimated value for {surface:.0f} m\u00b2: **{total:,.0f} PLN**")
     except Exception as e:
         st.error(f"Prediction error: {e}")
