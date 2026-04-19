@@ -8,6 +8,7 @@ import pandas as pd
 # -- Page config ---------------------------------------------------------------
 st.set_page_config(
     page_title="Warsaw Apartment Price Estimator",
+    page_icon="\U0001f3e0",
     layout="centered",
 )
 
