@@ -1,0 +1,8 @@
+models/*.pkl
+models/*.joblib
+data/*.xlsx
+data/*.csv
+__pycache__/
+*.pyc
+.env
+
