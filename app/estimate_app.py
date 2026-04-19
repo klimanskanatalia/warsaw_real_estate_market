@@ -82,7 +82,8 @@ with col1:
     construction_year = st.number_input(
         "Year of construction", min_value=1900, max_value=2030, value=2000, step=1
     )
-    building_age = 2025 - construction_year
+    current_year = pd.Timestamp.now().year
+    building_age = current_year - construction_year
 
 with col2:
     st.subheader("Location")
